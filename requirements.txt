@@ -1,0 +1,12 @@
+torch   
+transformers
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+sentence-transformers
+faiss-cpu
+pymupdf4llm
+markdown
+streamlit
+hf_xet
