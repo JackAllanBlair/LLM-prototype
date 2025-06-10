@@ -10,17 +10,17 @@ main.py serves as a basic test file to load documents, embed them, and test the 
 """
 
 # set to True if new data needs to be chunked and embedded
-chunk_and_embed_data = True
+chunk_and_embed_data = False
 
 if chunk_and_embed_data == True:
     # create list for all chunks
     all_chunks = []
 
     # simple loop to retrieve the name of each document in /documents
-    for filename in os.listdir("..\\Documents"):
+    for filename in os.listdir("C:\\Users\\jacko\\llm-visualisation\\LLM-prototype\\Documents"):
 
         # retrieve the path of each file in /documents
-        file_path = os.path.join("..\\Documents", filename)
+        file_path = os.path.join("C:\\Users\\jacko\\llm-visualisation\\LLM-prototype\\Documents", filename)
 
         # detect supported data types
         if os.path.isfile(file_path) and filename.lower().endswith((".pdf", ".txt")):

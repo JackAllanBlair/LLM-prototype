@@ -1,4 +1,5 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer
+from auto_gptq import AutoGPTQForCausalLM
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 import torch
@@ -7,8 +8,6 @@ import os
 """
 query_engine.py serves to initialize the tokenizer and model, create a prompt with context, and return an answer
 
-TODO: add in 
-
 """
 
 if os.path.exists("data/faiss_index"):
@@ -16,34 +15,33 @@ if os.path.exists("data/faiss_index"):
     embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
     # load vectorized data
+    global vectorstore
     vectorstore = FAISS.load_local("data/faiss_index", embedder, allow_dangerous_deserialization=True)
 else:
     print("No data in directory, continuing.")
 
-# check if cuda is available, otherwise default to cpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# initialize pre-trained tokenizer
-tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
+model_id = "TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
 
-# create and configure LLM
-model = AutoModelForCausalLM.from_pretrained(
-    "distilgpt2",
-    torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
-).to(device)
-model.eval()
+tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+model = AutoGPTQForCausalLM.from_quantized(
+    model_id,
+    device="cuda:0",
+    use_safetensors=True,
+    trust_remote_code=True,
+)
 
-def query_rag(question: str) -> str:
+def query_rag(question: str):
     # retrieve relevant data
-    docs = vectorstore.similarity_search(question, k=2)
+    docs = vectorstore.similarity_search(question, k=5)
 
     # build the structured context
     context = "\n\n".join(f"Chunk {i+1}: {doc.page_content}" for i, doc in enumerate(docs))
 
     # optimized prompt template
     prompt = f"""
-    Answer the question using the context below. Cite page numbers and paragraphs where applicable.
-    If the answer is not found in the context, say "I don't know based on the context provided."
+    Answer the question using the context below.
 
     Context:
     {context}
@@ -53,26 +51,16 @@ def query_rag(question: str) -> str:
 
     Answer:""".strip()
 
-    # tokenize the prompt
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True).to(device)
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda:0")
+    outputs = model.generate(**inputs, max_new_tokens=200)
 
-    # use autocast for mixed precision inference on GPU
-    with torch.autocast(device_type='cuda', enabled=(device.type == "cuda")):
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=300,
-            pad_token_id=tokenizer.eos_token_id,
-            do_sample=False,
-            repetition_penalty=1.2,
-            no_repeat_ngram_size=4
-        )
+    decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     # extract just the answer portion (after "Answer:")
-    if "Answer:" in response:
-        answer = response.split("Answer:")[-1].strip().split("Question:")[0].strip()
+    if "Answer:" in decoded_output:
+        answer = decoded_output.split("Answer:")[-1].strip().split("Question:")[0].strip()
     else:
-        answer = response.strip()
+        answer = decoded_output.strip()
 
-    return answer
+    return answer, context
